@@ -1,0 +1,195 @@
+---
+title: "Exploring the BRFSS data"
+output:
+  html_document:
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+  pdf_document: default
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+```
+
+### Load data
+
+```{r load-data}
+load("brfss2013.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+Generalizability: According to the Behavioral Risk Factor Surveillance System Overview: BRFSS 2013 documentation (http://www.cdc.goc/brfss/), the data for this study is collected from the randomly selected non-institutionalized adult population (18 years of age and older) residing in the US.
+
+Since random sampling is used in selecting the subjects, the findings of this study are generalizable, but ONLY for non-institutional, adult, US-residing population.
+
+Causality: Since, this is purely an observational study as NO random assignment (or experimental design) was performed to assign the sujects to any treatment or control groups, the findings of this study can NOT be used to identify any causational factors but merely an association.
+* * *
+
+## Part 2: Research questions
+
+**Research quesion 1:**
+Overall life satisfaction is one of the most important factors which everyone considers before moving to a particular state. Let’s calculate in which maximum percentage of people are very satisfied.
+
+**Research quesion 2:**
+Ever increasing work demand and competition has left people with less number of hours to cater to body in order to rejuvenate or relax. It is quite interesting what impact does daily sleep hour create on one's physical and mental health. Hence, we can conclude what is the optimal number of hours of sleep in a day which is required to sustain overall physical and mental hectics daily.
+
+From a descriptive point of view, is there any relationship between how many hours you sleep in a day to number of days you are physically not well or mentally not well. Further, which one of the former gets more impacted with amount of you sleep population incurs. Are there significant differences between males and females to this respect?
+
+**Research quesion 3:**
+As our lifestyle is changing, obesity is becoming a very common problem. Let’s find out how much our weight is making us more prone to arthritis.
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+**Research quesion 1:**
+Optional Module 22 - Emotional Support and Life Satisfaction stores the variable for Satisfaction With Life : lsatisfy.
+
+lsatisfy is a “Factor” (categorical) variable with 5 levels. We can look at these levels as follows:
+
+```{r}
+levels(brfss2013$lsatisfy)
+```
+Plotting the bar graph for these categories
+
+
+```{r}
+ggplot(data=brfss2013, aes(x=lsatisfy)) + geom_bar() + coord_cartesian(ylim=c(200,10000))
+```
+To find the state with the subjects who are most satisfied with life, extract only the Life Satisfaction level i.e. lsatisfy and States variables from brfss2013:
+
+```{r}
+satisfyState <- brfss2013 %>% select(c(lsatisfy, X_state)) %>% arrange(X_state)
+```
+
+Create a table to record life satisfaction level against each level and the create a function to calculate total number of reponses and their percentage responses for each level against each state.
+
+```{r}
+satisfyStateTbl <- table(satisfyState$lsatisfy, satisfyState$X_state, useNA = "ifany")
+StateSatisFunc <- function(x) {
+  c(Sum=x, Percent = round(x / sum(x) * 100, 1))
+}
+```
+
+Get the dimensions from the satisfyStateTbl to create the final data cube and then create the final cube with satisfaction levels broken down by states
+
+```{r}
+rows <- dim(satisfyStateTbl)[1] # number of rows in the contingency table
+cols <- length(satisfyState) # number of columns in the subsetted data
+states <- dim(satisfyStateTbl)[2] # number of states in the contingency table
+
+
+satisfyCube <- array(apply(satisfyStateTbl, 2, StateSatisFunc), dim=c(rows, cols, states),  
+                     dimnames=list(dimnames(satisfyStateTbl)[[1]], c("Total", "Percent"), dimnames(satisfyStateTbl)[[2]]))
+
+satisfyCube <- satisfyCube[,,-c(1, length(satisfyCube))] # removed the 1st and the last columns (not actual states)
+```
+
+The state where the most respondents replied “Very Satisfied” or “Satisfied” about their overall health:
+
+```{r}
+(mostSatisfied = which.max(satisfyCube[1,2,] + satisfyCube[2,2,]))
+```
+
+Mississippi is our state :)
+
+**Research quesion 2:**
+TO answer this quesiton we first consider the variables physhlth, menthlth, poorhlth, sleptim1 and sex. First four are discrete variables, wherein each of them represents:
+
+physhlth: Number Of Days Physical Health Not Good
+menthlth: Number Of Days Mental Health Not Good
+poorhlth: Poor Physical Or Mental Health
+
+and 
+
+sleptim1: How Much Time Do You Sleep(hrs).
+
+Firstly, let's see what's the general trend among the population in terms of how much time do they sleep in a day. But let's first omit all NA entries to remove inconsistencies from data.   
+
+```{r}
+
+validFields<-na.omit(subset(brfss2013,select=c(physhlth, menthlth, poorhlth, sleptim1, sex)))
+
+ggplot(validFields, aes(x=sleptim1)) +
+  geom_histogram(binwidth = 1) + coord_cartesian(xlim=c(0, 20))
+
+```
+
+As we see, most of the population sleeps 6+ hours which is minimum requirement for a healthy life. Further, let's calculate summaries for how number of hours of daily sleep is related to number of days not having good physical health and mental health.
+
+```{r}
+
+ggplot(data=validFields, aes(x=sleptim1, y=physhlth)) +
+  geom_count() + coord_cartesian(xlim=c(0, 24))
+
+
+ggplot(data=validFields, aes(x=sleptim1, y=menthlth)) +
+  geom_count() + coord_cartesian(xlim=c(0, 24))
+```
+
+Using above plots we an certainly depict the magnitude of impact of number of hours of sleep on mental health compared to physical health. Consider the normal adequate sleep range 6-10 hrs, high intensity spheres lies on 0 bad mental health days which goes upto 25000 whereas with even sufficient sleep hours the distribution is not the same in terms of bad physical health days(maximum range of 15000 for 0 bad physical days) i.e. a good sleep is not a good certainity for a good physical health this can be inferred. Below, summaries signify same:
+
+
+```{r}
+validFields %>%
+  group_by(sleptim1) %>%
+  summarise(median_pDays=median(physhlth), mean_pDays=mean(physhlth), IQR_pDays = IQR(physhlth),min_pDays=min(physhlth),max_pDays=max(physhlth))
+
+ggplot(validFields, aes(x = factor(sleptim1), y = physhlth)) +
+  geom_boxplot()
+
+validFields %>%
+  group_by(sleptim1) %>%
+  summarise(median_mDays=median(menthlth), mean_mDays=mean(menthlth), IQR_mDays = IQR(menthlth),min_mDays=min(menthlth),max_mDays=max(menthlth))
+
+ggplot(validFields, aes(x = factor(sleptim1), y = menthlth)) +
+  geom_boxplot()
+
+```
+
+Overall representation of sleptim1 vs poorhlth below i.e. number of sleep hours vs poor health(physical vs mental) gives a clear picture as to what is the required optimal number of sleep hours in order to avoid poor health(6-8 hrs).
+
+```{r}
+validFields %>%
+  group_by(sleptim1) %>%
+  summarise(median_prDays=median(poorhlth), mean_prDays=mean(poorhlth), IQR_prDays = IQR(poorhlth),min_prDays=min(poorhlth),max_prDays=max(poorhlth))
+
+ggplot(validFields, aes(x = factor(sleptim1), y = poorhlth)) +
+  geom_boxplot()
+
+```
+
+1. Our study must be restricted to the description of the given sample and no conclusion about the population can be drawn (what can only be done after an inferential analysis).
+2. The observed relationship cannot be considered as causality because the sampling process merely corresponds to a observational study and not to a randomized experiment.
+
+**Research quesion 3:**
+Main Survey - Section 8 - Demographics stores the variable weight2: Reported Weight In Pounds and Main Survey - Section 7 - Chronic Health Conditions stores the varible havarth3: Told Have Arthritis
+
+Extract variables pertaining to weight, Arthritis and gender for 500 males and 500 females:
+```{r}
+set.seed(9999)
+sampSize = 500
+
+data <- sample_n(brfss2013[brfss2013$havarth3 %in% c("Yes", "No") & brfss2013$sex == "Female", c("weight2", "havarth3", "sex")], sampSize)
+
+sampleData <- rbind(data, sample_n(brfss2013[brfss2013$havarth3 %in% c("Yes", "No") & brfss2013$sex == "Male", c("weight2", "havarth3", "sex")], sampSize))
+```
+
+plot the dependent variable (have arthritis) against the independent variable (reported weigth in pounds), broken down by gender:
+
+```{r}
+weight = cut(as.numeric(sampleData$weight2),10) #refactoring weight2 in order to make a clear graph.
+ggplot(data=sampleData, aes(x=weight, fill=havarth3, position="dodge")) + geom_bar() + facet_grid(sex ~ havarth3)
+```
